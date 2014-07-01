@@ -1,0 +1,8 @@
+#!/bin/bash
+sudo modprobe -r kvm_intel
+sudo modprobe -r kvm
+make M=arch/x86/kvm/
+sudo cp -r arch/x86/kvm/*.ko /lib/modules/$(uname -r)/kernel/arch/x86/kvm/
+sudo modprobe kvm
+sudo modprobe kvm_intel
+sudo chmod 777 /dev/kvm

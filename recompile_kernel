@@ -1,0 +1,4 @@
+#!/bin/bash
+sudo make -j 3
+sudo make -j 3 modules
+sudo make -j 3 modules_install && sudo make -j 3 install

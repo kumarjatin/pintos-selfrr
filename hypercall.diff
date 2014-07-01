@@ -1,0 +1,71 @@
+diff -r linux/linux-3.8/arch/x86/kvm/vmx.c linux-3.8/arch/x86/kvm/vmx.c
+4454,4456c4454,4460
+< 	unsigned long exit_qualification;
+< 	int size, in, string;
+< 	unsigned port;
+---
+>         unsigned long exit_qualification;
+>         int size, in, string;
+>         unsigned port;
+>         char data = (char)kvm_register_read(vcpu, VCPU_REGS_RAX);
+>         exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
+>         string = (exit_qualification & 16) != 0;
+>         in = (exit_qualification & 8) != 0;
+4458,4460c4462
+< 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
+< 	string = (exit_qualification & 16) != 0;
+< 	in = (exit_qualification & 8) != 0;
+---
+>         ++vcpu->stat.io_exits;
+4462c4464,4465
+< 	++vcpu->stat.io_exits;
+---
+>         if (string || in)
+>                 return emulate_instruction(vcpu, 0) == EMULATE_DONE;
+4464,4471c4467,4490
+< 	if (string || in)
+< 		return emulate_instruction(vcpu, 0) == EMULATE_DONE;
+< 
+< 	port = exit_qualification >> 16;
+< 	size = (exit_qualification & 7) + 1;
+< 	skip_emulated_instruction(vcpu);
+< 
+< 	return kvm_fast_pio_out(vcpu, size, port);
+---
+>         port = exit_qualification >> 16;
+>         size = (exit_qualification & 7) + 1; 
+>         skip_emulated_instruction(vcpu);
+>         if(port==vcpu->pintos_port) {
+>                 if(data=='\0')
+>                 {    
+>                         printk("PINTOS(%d): %s", vcpu->pintos_buffer_filled, vcpu->pintos_buffer);
+>                         memset(vcpu->pintos_buffer, '\0', vcpu->pintos_buffer_size);
+>                         vcpu->pintos_buffer_filled=0;
+>                 }    
+>                 else 
+>                 {    
+>                         vcpu->pintos_buffer[vcpu->pintos_buffer_filled]=data;
+>                         vcpu->pintos_buffer_filled++;
+>                         if(vcpu->pintos_buffer_filled==vcpu->pintos_buffer_size-1)
+>                         {    
+>                                 vcpu->pintos_buffer[vcpu->pintos_buffer_filled]='\0';
+>                                 printk("PINTOS(%d): %s", vcpu->pintos_buffer_filled, vcpu->pintos_buffer);
+>                                 memset(vcpu->pintos_buffer, '\0', vcpu->pintos_buffer_size);
+>                                 vcpu->pintos_buffer_filled=0;
+>                         }    
+>                 }    
+>         }    
+>         return kvm_fast_pio_out(vcpu, size, port);
+diff -r linux/linux-3.8/include/linux/kvm_host.h linux-3.8/include/linux/kvm_host.h
+252a253,258
+> 
+>         /* Stuff for pintos printf hypercall */
+>         char pintos_buffer[10000];
+>         int pintos_buffer_filled;
+>         int pintos_buffer_size;
+>         int pintos_port;
+diff -r linux/linux-3.8/virt/kvm/kvm_main.c linux-3.8/virt/kvm/kvm_main.c
+231a232,234
+>         vcpu->pintos_port = 80;
+>         vcpu->pintos_buffer_size = 1000;
+>         vcpu->pintos_buffer_filled = 0;

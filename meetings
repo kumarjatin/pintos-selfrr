@@ -1,0 +1,9 @@
+Jan 6, 2014
+===========
+Assumptions that we can safely make are:
+- All H/W interrupts are registered as interrupt gates
+- Interrupt handlers don't re-enable interrupts
+- `int` instructions are not invoked on interrupt gates
+- H/W interrupts don't look above/below the interrupt frame in the stack. (Because the stack is not same during replay as of now)
+
+NOTE: Interrupt handlers vs Trap handlers

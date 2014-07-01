@@ -1,0 +1,20 @@
+intr_register_int(PMI_VECTOR_NO, 3, INTR_OFF, NULL, "#PMI Performance Monitoring Interrupt");
+intr_register_int (3, 3, INTR_ON, kill, "#BP Breakpoint Exception");
+intr_register_int (4, 3, INTR_ON, kill, "#OF Overflow Exception");
+intr_register_int (5, 3, INTR_ON, kill,
+intr_register_int (0, 0, INTR_ON, kill, "#DE Divide Error");
+intr_register_int (1, 0, INTR_ON, kill, "#DB Debug Exception");
+intr_register_int (6, 0, INTR_ON, kill, "#UD Invalid Opcode Exception");
+intr_register_int (7, 0, INTR_ON, kill,
+intr_register_int (11, 0, INTR_ON, kill, "#NP Segment Not Present");
+intr_register_int (12, 0, INTR_ON, kill, "#SS Stack Fault Exception");
+intr_register_int (13, 0, INTR_ON, kill, "#GP General Protection Exception");
+intr_register_int (16, 0, INTR_ON, kill, "#MF x87 FPU Floating-Point Error");
+intr_register_int (19, 0, INTR_ON, kill,
+intr_register_int (14, 0, INTR_OFF, page_fault, "#PF Page-Fault Exception");
+intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+intr_register_ext (0x20 + 4, serial_interrupt, "serial");
+intr_register_ext (0x21, keyboard_interrupt, "8042 Keyboard");
+intr_register_ext (c->irq, interrupt_handler, c->name);
+intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+intr_register_ext (int_vec, pci_interrupt, "PCI");

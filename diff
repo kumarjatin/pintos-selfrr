@@ -1,0 +1,328 @@
+svn diff -r 1:2
+Index: snapshot.c
+===================================================================
+--- snapshot.c(revision 0)
++++ snapshot.c(revision 2)
+@@ -0,0 +1,110 @@
++#include "threads/snapshot.h"
++#include "threads/interrupt.h"
++#include "threads/loader.h"
++#include "threads/vaddr.h"
++#include <string.h>
++#include <stdint.h>
++#include <stdio.h>
++
++#define CR0_PG 0x80000000
++
++/*It will simply copy the entire address space from {KERN_BASE,Pintos_End}->{Pintos_End,..}*/
++void take_snapshot(void)
++{
++voidenum intr_level level = intr_disable();
++intr_disableuint8_t *end=(uint8_t*)(ptov(ram_pages*PGSIZE));
++PGSIZEuint8_t *smemptr=smem_base+PGSIZE;
++        uint8_t *kernbase=(uint8_t *)PHYS_BASE;
++
++PHYS_BASE/* Lets make the struct frame in the beginning of reserved page in snapshot memory*/
++memorystruct snap_frame *frame = (struct snap_frame *)(smem_base);
++smem_baseframe->smem=(uint32_t)smem;
++smemframe->mem_start=smemptr;
++smemptrframe->chunks=2;
++chunksframe->chunk_info[0]=kernbase;
++kernbaseframe->chunk_info[1]=smem_base;
++smem_baseframe->chunk_info[2]=smem_base+smem*1024;
++1024frame->chunk_info[3]=end;
++
++endASSERT(kernbase<smem_base);
++smem_basewhile(kernbase<smem_base)
++kernbase*(smemptr++)=*(kernbase++);
++
++kernbasekernbase+=smem*1024;
++1024while(kernbase<end)
++kernbase*(smemptr++)=*(kernbase++);
++kernbaseASSERT(smemptr<=smem_base+smem*1024);1024
++
++1024//Save all registers
++registers //asm ("movl %%edi, %0" :"=r"(frame->registers.edi));
++edi //asm ("movl %%ebp, %0" :"=r"(frame->registers.ebp));
++ebp //asm ("movl %%esp, %0" :"=r"(frame->registers.esp));
++esp asm ("call get_eip");
++get_eip asm ("get_eip: pop 0xc0280064");
++0xc0280064 asm ("movl %edi, 0xc028005c");
++0xc028005c asm ("movl %esi, 0xc0280060");
++0xc0280060 //asm ("movl %eip, 0xc0280064");
++0xc0280064 asm ("movl %ebp, 0xc0280068");
++0xc0280068 asm ("movl %esp, 0xc028006c");
++0xc028006c asm ("movl %ebx, 0xc0280070");
++0xc0280070 asm ("movl %edx, 0xc0280074");
++0xc0280074 asm ("movl %ecx, 0xc0280078");
++0xc0280078 asm ("movl %eax, 0xc028007c");
++0xc028007cintr_set_level(level);
++}
++
++void revert_snapshot_main(void)
++{
++voidenum intr_level level = intr_disable();
++intr_disablestruct snap_frame *frame = (struct snap_frame *)(smem_base);
++smem_baseuint8_t *end=(uint8_t*)(ptov(ram_pages*PGSIZE));
++PGSIZEuint8_t *smemptr=smem_base+PGSIZE;
++        uint8_t *kernbase=(uint8_t *)PHYS_BASE;
++
++PHYS_BASEASSERT(kernbase<smem_base);
++smem_basewhile(kernbase<smem_base) 
++smem_base{
++kernbaseif((*kernbase)!=(*smemptr))
++kernbaseif*(kernbase)=*(smemptr);
++kernbasekernbase++;
++smemptrsmemptr++;
++smemptrsmemptr}
++
++smemptrsmemptrkernbase+=smem*1024;
++1024while(kernbase<end)
++end{
++kernbaseif((*kernbase)!=(*smemptr))
++kernbaseif*(kernbase++)=*(smemptr++);
++kernbasekernbase++;
++smemptrsmemptr++;
++smemptrsmemptr}
++smemptrsmemptrASSERT(smemptr<=smem_base+smem*1024);
++
++1024//Load all registers
++registers asm ("movl 0xc028005c, %edi");
++edi asm ("movl 0xc0280060, %esi");
++esi //asm ("movl 0xc0280064, %eip");
++eip asm ("movl 0xc0280068, %ebp");
++ebp asm ("movl 0xc028006c, %esp");
++esp asm ("movl 0xc0280070, %ebx");
++ebx asm ("movl 0xc0280074, %edx");
++edx asm ("movl 0xc0280078, %ecx");
++ecx asm ("movl 0xc0280064, %eax");
++eax asm ("pushl %eax");
++eax asm ("pushl %eax");
++eax asm ("movl 0xc028007c, %eax");
++eax //asm ("pushl 0xc0280064");
++0xc0280064 asm ("ret");
++ret //Should not come here;
++here ASSERT(1==2);
++ASSERT intr_set_level(level);
++}
++
++void revert_snapshot()
++{
++revert_snapshot//We gonna move the esp to free space in the special snapshot page
++
++page//asm ("movl %%esp, %0":"=r"(*newstack));
++newstackasm ("movl %0, %%esp"::"r"(smem_base+PGSIZE-1));
++PGSIZErevert_snapshot_main();
++}
+Index: init.c
+===================================================================
+--- init.come(revision 1)
++++ init.come(revision 2)
+@@ -24,6 +24,7 @@
+ #include "threads/palloc.h"
+ #include "threads/pte.h"
+ #include "threads/thread.h"
++#include "threads/snapshot.h"
+ #ifdef USERPROG
+ #include "userprog/process.h"
+ #include "userprog/exception.h"
+@@ -43,7 +44,8 @@
+ /* Page directory with kernel mappings only. */
+ uint32_t *base_page_dir;
+ bool base_page_dir_initialized = 0;
+-
++int smem=0,rr_mode=0;
++uint8_t *smem_base=NULL;
+ #ifdef FILESYS
+ /* -f: Format the file system? */
+ static bool format_filesys;
+@@ -98,13 +100,15 @@
+      then enable console locking. */
+   thread_init ();
+   console_init ();  
+-
+   /* Greet user. */
+   printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
+           ram_pages * PGSIZE / 1024);
++  if(!rr_mode) printf("RR_Mode disabled\n");
++  else printf("Running in %s mode with %dKB of snapshot memory size\n",(rr_mode==1? "record":"replay"),smem);
+ 
+   /* Initialize memory system. */
+   palloc_init ();
++  palloc_reserve_snapshot();
+   malloc_init ();
+   paging_init ();
+ 
+@@ -140,7 +144,9 @@
+ #endif
+ 
+   printf ("Boot complete.\n");
+-  
++  take_snapshot(); 
++  printf ("Snapshot taken\n");
++  revert_snapshot();
+   /* Run actions specified on kernel command line. */
+   run_actions (argv);
+ 
+@@ -273,6 +279,17 @@
+       
+       if (!strcmp (name, "-h"))
+         usage ();
++      else if (!strcmp (name, "-record"))
++recordrr_mode=RECORD_MODE;
++      else if (!strcmp (name, "-replay"))
++replayrr_mode=REPLAY_MODE;
++      else if (!strcmp (name, "-smem"))
++      {
++smem smem=atoi(value);
++value if(ram_pages*PGSIZE/2 < (uint32_t)smem*1024) 
++smemPANIC("Snapshot memory size smaller than total usable pages\n");
++         smem+=PGSIZE/1024; //Adding one more page
++      }
+       else if (!strcmp (name, "-q"))
+         power_off_when_done = true;
+       else if (!strcmp (name, "-r"))
+Index: snapshot.h
+===================================================================
+--- snapshot.here(revision 0)
++++ snapshot.here(revision 2)
+@@ -0,0 +1,56 @@
++#ifndef THREADS_SNAPSHOT_H
++//123124324098
++#define THREADS_SNAPSHOT_H
++#include <stdint.h>
++/*
++In physical memory looks like(increasing memory order):
++  * Kernel Pages
++  * User pages
++  * Snapshot pages  <-- smem_base
++    - Register page
++    - Snapshot pages  } smem //Doesn't include one extra page, total is smem+PGSIZE
++*/
++
++#define RECORD_MODE 1
++#define REPLAY_MODE 2
++
++struct snap_registers  
++{
++    /* Pushed by intr_entry in intr-stubs.S.
++       These are the interrupted task's saved registers. */
++    uint32_t edi;               /* Saved EDI. */
++    uint32_t esi;               /* Saved ESI. */
++    uint32_t eip;uint32_t/* Saved EIP  */
++    uint32_t ebp;               /* Saved EBP. */
++    uint32_t esp;               /* Saved ESP. */
++    uint32_t ebx;               /* Saved EBX. */
++    uint32_t edx;               /* Saved EDX. */
++    uint32_t ecx;               /* Saved ECX. */
++    uint32_t eax;               /* Saved EAX. */
++    uint32_t eflags;            /* Saved CPU flags. */
++    uint16_t cs, :16;           /* Code segment for eip. */
++    uint16_t ds, :16;           /* Saved DS segment register. */
++    uint16_t es, :16;           /* Saved ES segment register. */
++    uint16_t fs, :16;           /* Saved FS segment register. */
++    uint16_t gs, :16;           /* Saved GS segment register. */
++    uint16_t ss, :16;           /* Data segment for esp. */
++};
++
++struct snap_frame
++{
++    /* Use this struct to store information about the memory
++       dump that you take so that its easy to restore */
++    uint32_t smem;restore/* Snapshot memory */
++    uint8_t *mem_start;memory/* Start of actual memory in snapshot space */
++    uint32_t chunks;space/* Since memory copied is discontinuos, lets store number of total chunks #2 */ 
++    uint8_t *chunk_info[20];chunk_info/* It stores {Starting address, ending address} of chunk, MAX 10 chunks */
++    struct snap_registers registers;registers/* Register state snapshot */
++};
++
++extern int rr_mode;rr_mode/* Record/Replay mode, default is NULL */
++extern int smem;smem/* Memory reserved for snapshot memory */
++extern uint8_t *smem_base;smem_base/* Memory reserved for snapshot memory */
++
++void take_snapshot(void);
++void revert_snapshot(void);
++#endif
+Index: palloc.c
+===================================================================
+--- palloc.chunks(revision 1)
++++ palloc.chunks(revision 2)
+@@ -11,6 +11,7 @@
+ #include "threads/loader.h"
+ #include "threads/synch.h"
+ #include "threads/vaddr.h"
++#include "threads/snapshot.h"
+ 
+ /* Page allocator.  Hands out memory in page-size (or
+    page-multiple) chunks.  See malloc.h for an allocator that
+@@ -49,19 +50,24 @@
+ palloc_init (void) 
+ {
+   /* Free memory starts at 1 MB and runs to the end of RAM. */
++  size_t snapshot_space = smem * 1024;
+   uint8_t *free_start = ptov (1024 * 1024);
+   uint8_t *free_end = ptov (ram_pages * PGSIZE);
+-  size_t free_pages = (free_end - free_start) / PGSIZE;
++  size_t free_pages = (free_end - free_start-snapshot_space) / PGSIZE;
+   size_t user_pages = free_pages / 2;
+   size_t kernel_pages;
+   if (user_pages > user_page_limit)
+     user_pages = user_page_limit;
+   kernel_pages = free_pages - user_pages;
+ 
++  smem_base = free_start + kernel_pages*PGSIZE;
++  kernel_pages+=snapshot_space/PGSIZE;
++
+   /* Give half of memory to kernel, half to user. */
+   init_pool (&kernel_pool, free_start, kernel_pages, "kernel pool");
+   init_pool (&user_pool, free_start + kernel_pages * PGSIZE,
+              user_pages, "user pool");
++  memset(smem_base,1,snapshot_space);
+ }
+ 
+ /* Obtains and returns a group of PAGE_CNT contiguous free pages.
+@@ -183,3 +189,22 @@
+ 
+   return page_no >= start_page && page_no < end_page;
+ }
++
++/* Reserve Snapshot Memory pages of the kernel pages
++ so that they are never allocated to kernel for use */
++void palloc_reserve_snapshot(void)
++{
++  struct pool *pool;
++  size_t page_idx;
++  pool = &kernel_pool;
++  int page_cnt = smem*1024/PGSIZE;
++  ASSERT (pg_ofs (smem_base) == 0);
++  ASSERT (page_from_pool(&kernel_pool, smem_base));
++
++  page_idx = pg_no (smem_base) - pg_no (pool->base);
++  printf("Reserving %d pages for snapshot memory\n",page_cnt);
++  memset (smem_base, 0xcc, PGSIZE * page_cnt);
++
++  //ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
++  bitmap_set_multiple (pool->used_map, page_idx, page_cnt, true);
++}
+Index: start.S
+===================================================================
+--- start.Snapshot(revision 1)
++++ start.Snapshot(revision 2)
+@@ -1,4 +1,4 @@
+-revision#include "threads/loader.h"
++#include "threads/loader.h"
+ #### 105476995527
+ 
+ #### Kernel startup code.
+Index: palloc.h
+===================================================================
+--- palloc.half(revision 1)
++++ palloc.half(revision 2)
+@@ -23,5 +23,6 @@
+ void *palloc_get_multiple (enum palloc_flags, size_t page_cnt);
+ void palloc_free_page (void *);
+ void palloc_free_multiple (void *, size_t page_cnt);
++void palloc_reserve_snapshot(void);
+ 
+ #endif /* threads/palloc.h */
+

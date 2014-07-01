@@ -1,0 +1,40 @@
+Short description of changes:
+        * Reserved HALF+1 page of total memory allocated to pintos for snapshot space
+        * 1 page of snapshot is used to store the snap_frame which contains the register values and other important information required for restoring the snapshot. Also this page is used while restoring as stack so that the variables declared in revert_snapshot_main() function are not overwritten with the earlier stack state.
+        * In addition to this also added command line flags like '-record', '-replay', '-smem=<value>':
+                -record: just sets global rr_mode flag to RECORD_MODE, defined in threads/snapshot.h
+                -replay: just sets global rr_mode flag to REPLAY_MODE, defined in threads/snapshot.h
+                -smem: sets the value of memory reserved for snapshot space from kernel pages. It adds one more page to this given value for the purpose explained above. Also if given it should be more than half of the total memory allocated to pintos. 
+
+How to run:
+        * pintos -v -m 8 -- -q -replay -smem=4096
+
+-----------------
+Snapshot can be saved to disk using -g record.log -record flags like:
+	* pintos --scratch-size=10MB -g record.log -a recordnew.log -m 8 -- -f -q -smem=4096 -record	
+An existing snapshot can be used to restore that snapshot state using command like:
+	* pintos --scratch-size=10MB -p recordnew.log -a record.log -m 8 -- -f -q -smem=4096 -replay
+
+For implementation of above, i added a check if -record/replay flag is given along with -get/put option, then it calls appropriate function in the fsutil file. I added two new function in fsutil by modifying the fsutil_extract and fsutil_append functions.
+
+-----------------
+pintos --scratch-size=10MB -g record.log -a recordnew.log -m 9 -- -f -q -smem=5120 -record
+pintos --scratch-size=10MB -p recordnew.log -a record.log -m 9 -- -f -q -smem=5120 -replay
+
+------- May 20, 2014 ----------
+pintos -v -k -T 60 --qemu -p tests/userprog/args-none -a args-none -m 9 -- -f -q -smem=5120 -record
+pintos -v -k -T 60 --qemu --scratch-size=10MB -g record.log -a recordnew.log -m 9 -- -q -smem=5120 -record run args-none
+pintos -v -k -T 120 --qemu --scratch-size=10MB -p recordnew.log -a record.log -m 9 -- -q -smem=5120 -replay run args-none
+
+-----
+Used linux_3.8.0-19.30.diff.diff.gz  linux_3.8.0.orig.tar.gz, patched original with diff and then with hypercall diff 
+-----
+Now you can run the tests using make file, no need to pass stuff to pintos script yourself
+You can tweak the variables in userprog/Make.vars
+
+* Run with Record/Replay
+make tests/userprog/exec-multiple.output
+* Run in Record mode
+make tests/userprog/exec-multiple.output TESTARGS="record"
+* Run in Replay mode
+make tests/userprog/exec-multiple.output TESTARGS="replay"
